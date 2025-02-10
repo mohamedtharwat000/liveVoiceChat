@@ -1,181 +1,91 @@
 "use client";
 
-import {
-  CreateProjectKeyResponse,
-  LiveClient,
-  LiveTranscriptionEvents,
-  createClient,
-} from "@deepgram/sdk";
-import { useState, useEffect, useCallback } from "react";
-import { useQueue } from "@uidotdev/usehooks";
+import { useState, useRef } from "react";
 import Recording from "./recording.svg";
 import Siriwave from "react-siriwave";
+import { AudioRecorder } from "./recording";
 
 export default function Microphone() {
-  const { add, remove, first, size, queue } = useQueue<any>([]);
-  const [apiKey, setApiKey] = useState<CreateProjectKeyResponse | null>();
-  const [connection, setConnection] = useState<LiveClient | null>();
-  const [isListening, setListening] = useState(false);
-  const [isLoadingKey, setLoadingKey] = useState(true);
-  const [isLoading, setLoading] = useState(true);
-  const [isProcessing, setProcessing] = useState(false);
-  const [micOpen, setMicOpen] = useState(false);
-  const [microphone, setMicrophone] = useState<MediaRecorder | null>();
-  const [userMedia, setUserMedia] = useState<MediaStream | null>();
-  const [caption, setCaption] = useState<string | null>();
-  const [audio, setAudio] = useState<HTMLAudioElement | null>();
+  const [isRecording, setIsRecording] = useState(false);
+  const [isLoading, setLoading] = useState(false);
+  const [caption, setCaption] = useState<string | null>(null);
+  const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const toggleMicrophone = useCallback(async () => {
-    if (microphone && userMedia) {
-      setUserMedia(null);
-      setMicrophone(null);
+  const audioRecorder = useRef<AudioRecorder>(new AudioRecorder());
 
-      microphone.stop();
-    } else {
-      const userMedia = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-      });
-
-      const microphone = new MediaRecorder(userMedia);
-      microphone.start(500);
-
-      microphone.onstart = () => {
-        setMicOpen(true);
-      };
-
-      microphone.onstop = () => {
-        setMicOpen(false);
-      };
-
-      microphone.ondataavailable = (e) => {
-        add(e.data);
-      };
-
-      setUserMedia(userMedia);
-      setMicrophone(microphone);
+  const startRecording = async () => {
+    try {
+      setError(null);
+      setIsRecording(true);
+      await audioRecorder.current.startRecording();
+    } catch (err) {
+      setError((err as Error).message);
+      setIsRecording(false);
     }
-  }, [add, microphone, userMedia]);
+  };
 
-  useEffect(() => {
-    if (!apiKey) {
-      console.log("getting a new api key");
-      fetch("/api/deepgram", { cache: "no-store" })
-        .then((res) => res.json())
-        .then((object) => {
-          if (!("key" in object)) throw new Error("No api key returned");
-          console.log(object);
-          setApiKey(object);
-          setLoadingKey(false);
-        })
-        .catch((e) => {
-          console.error(e);
-        });
-    }
-  }, [apiKey]);
+  const stopRecording = async () => {
+    try {
+      setIsRecording(false);
+      const audioBlob = await audioRecorder.current.stopRecording();
 
-  useEffect(() => {
-    if (apiKey && "key" in apiKey) {
-      console.log("connecting to deepgram");
-      const deepgram = createClient(apiKey?.key ?? "");
-      const connection = deepgram.listen.live({
-        model: "nova",
-        interim_results: false,
-        language: "en-US",
-        smart_format: true,
-      });
+      const reader = new FileReader();
+      reader.readAsDataURL(audioBlob);
+      reader.onloadend = async () => {
+        const base64Audio = reader.result as string;
+        const payload = {
+          question: "",
+          uploads: [
+            {
+              data: base64Audio,
+              type: "audio",
+              name: "audio.webm",
+              mime: "audio/webm",
+            },
+          ],
+        };
 
-      connection.on(LiveTranscriptionEvents.Open, () => {
-        console.log("connection established");
-        setListening(true);
-      });
+        setLoading(true);
 
-      connection.on(LiveTranscriptionEvents.Close, () => {
-        console.log("connection closed");
-        setListening(false);
-        setApiKey(null);
-        setConnection(null);
-      });
+        try {
+          const response = await fetch(
+            "https://llminabox.criticalfutureglobal.com/api/v1/prediction/0f6e4479-ba3d-4a34-b0cb-be96f269a24c",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            }
+          );
 
-      connection.on(LiveTranscriptionEvents.Transcript, (data) => {
-        const words = data.channel.alternatives[0].words;
-        const caption = words
-          .map((word: any) => word.punctuated_word ?? word.word)
-          .join(" ");
-        if (caption !== "") {
-          setCaption(caption);
-          if (data.is_final) {
-            fetch(
-              "https://llminabox.criticalfutureglobal.com/api/v1/prediction/0f6e4479-ba3d-4a34-b0cb-be96f269a24c",
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  question: "who are you?",
-                }),
-              }
-            )
-              .then((response) => response.json())
-              .then((chatCompletion) => {
-                setCaption(chatCompletion.text);
-                return fetch("/api/tts", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ text: chatCompletion.text }),
-                });
-              })
-              .then((response) => response.json())
-              .then((data) => {
-                const binaryString = atob(data.audio);
-                const len = binaryString.length;
-                const bytes = new Uint8Array(len);
-                for (let i = 0; i < len; i++) {
-                  bytes[i] = binaryString.charCodeAt(i);
-                }
+          const chatCompletion = await response.json();
+          setCaption(chatCompletion.text);
 
-                const blob = new Blob([bytes.buffer], {
-                  type: "audio/mp3",
-                });
-                const url = URL.createObjectURL(blob);
+          const ttsResponse = await fetch("/api/tts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: chatCompletion.text }),
+          });
 
-                const audio = new Audio(url);
-                setAudio(audio);
-                console.log("Playing audio.");
-                audio.play();
-              })
-              .catch((error) => {
-                console.error(error);
-              });
-          }
+          const { audioUrl } = await ttsResponse.json();
+          const audioElement = new Audio(audioUrl);
+
+          setAudio(audioElement);
+          audioElement.play();
+        } catch (err) {
+          setError("Failed to process audio: " + (err as Error).message);
         }
-      });
 
-      setConnection(connection);
+        setLoading(false);
+      };
+    } catch (err) {
+      setError((err as Error).message);
+      setIsRecording(false);
       setLoading(false);
     }
-  }, [apiKey]);
+  };
 
-  useEffect(() => {
-    const processQueue = async () => {
-      if (size > 0 && !isProcessing) {
-        setProcessing(true);
-
-        if (isListening) {
-          const blob = first;
-          connection?.send(blob);
-          remove();
-        }
-
-        const waiting = setTimeout(() => {
-          clearTimeout(waiting);
-          setProcessing(false);
-        }, 250);
-      }
-    };
-
-    processQueue();
-  }, [connection, queue, remove, first, size, isProcessing, isListening]);
-
-  function handleAudio() {
+  const handleAudioPlaying = () => {
     return (
       audio &&
       audio.currentTime > 0 &&
@@ -183,32 +93,36 @@ export default function Microphone() {
       !audio.ended &&
       audio.readyState > 2
     );
-  }
-
-  if (isLoadingKey)
-    return (
-      <span className="w-full text-center">Loading temporary API key...</span>
-    );
-  if (isLoading)
-    return <span className="w-full text-center">Loading the app...</span>;
+  };
 
   return (
     <div className="w-full relative">
       <div className="relative flex w-screen justify-center items-center max-w-screen-lg place-items-center content-center before:pointer-events-none after:pointer-events-none before:absolute before:right-0 after:right-1/4 before:h-[300px] before:w-[480px] before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-[240px] after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 before:lg:h-[360px]">
-        <Siriwave theme="ios9" autostart={handleAudio() || false} />
+        <Siriwave
+          theme="ios9"
+          autostart={handleAudioPlaying() || isRecording}
+        />
       </div>
       <div className="mt-10 flex flex-col align-middle items-center">
-        <button className="w-24 h-24" onClick={() => toggleMicrophone()}>
+        <button
+          className="w-24 h-24"
+          onMouseDown={startRecording}
+          onMouseUp={stopRecording}
+          onMouseLeave={isRecording ? stopRecording : undefined}
+          disabled={isLoading}
+        >
           <Recording
             width="96"
             height="96"
-            className={
-              `cursor-pointer` + !!userMedia && !!microphone && micOpen
-                ? "fill-red-400 drop-shadow-glowRed"
-                : "fill-gray-600"
-            }
+            className={`cursor-pointer ${
+              isRecording ? "fill-red-400 drop-shadow-glowRed" : "fill-gray-600"
+            }`}
           />
         </button>
+        {error && <div className="mt-4 p-2 text-red-500 text-sm">{error}</div>}
+        {isLoading && (
+          <div className="mt-4 p-2 text-blue-500">Processing audio...</div>
+        )}
         <div className="mt-20 p-6 text-xl text-center">{caption}</div>
       </div>
     </div>
