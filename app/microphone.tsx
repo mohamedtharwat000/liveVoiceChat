@@ -4,6 +4,27 @@ import { useState, useRef } from "react";
 import Recording from "./recording.svg";
 import Siriwave from "react-siriwave";
 import { AudioRecorder } from "./recording";
+import { CogIcon, PlusIcon, StopCircle } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogTrigger,
+  DialogClose,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+
+// Import Shadcn UI components for Select and Slider
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
 
 export default function Microphone() {
   const [isRecording, setIsRecording] = useState(false);
@@ -11,6 +32,46 @@ export default function Microphone() {
   const [caption, setCaption] = useState<string | null>(null);
   const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Settings state
+  const [settingsOpen, setSettingsOpen] = useState(true);
+  const [chatflowId, setChatflowId] = useState<string | null>(null);
+  const [sessionID, setSessionID] = useState<string>(
+    Math.random().toString(36).substring(7)
+  );
+  const [speechRate, setSpeechRate] = useState(0); // -50 to 50 %
+  const [speechPitch, setSpeechPitch] = useState(0); // -20 to 20 Hz
+  const [selectedVoice, setSelectedVoice] = useState(
+    "en-US-RogerNeural - en-US (Male)"
+  );
+  const voices = [
+    "en-CA-ClaraNeural - en-CA (Female)",
+    "en-US-AndrewMultilingualNeural - en-US (Male)",
+    "en-US-BrianNeural - en-US (Male)",
+    "en-GB-LibbyNeural - en-GB (Female)",
+    "en-US-RogerNeural - en-US (Male)",
+    "en-US-MichelleNeural - en-US (Female)",
+    "en-US-GuyNeural - en-US (Male)",
+    "en-US-BrianMultilingualNeural - en-US (Male)",
+    "en-US-SteffanNeural - en-US (Male)",
+    "en-US-AvaNeural - en-US (Female)",
+    "en-GB-ThomasNeural - en-GB (Male)",
+    "en-US-EmmaNeural - en-US (Female)",
+    "en-GB-MaisieNeural - en-GB (Female)",
+    "en-CA-LiamNeural - en-CA (Male)",
+    "en-GB-SoniaNeural - en-GB (Female)",
+    "en-AU-WilliamNeural - en-AU (Male)",
+    "en-US-EmmaMultilingualNeural - en-US (Female)",
+    "en-US-AriaNeural - en-US (Female)",
+    "en-US-AndrewNeural - en-US (Male)",
+    "en-GB-RyanNeural - en-GB (Male)",
+    "en-US-AnaNeural - en-US (Female)",
+    "en-US-ChristopherNeural - en-US (Male)",
+    "en-US-JennyNeural - en-US (Female)",
+    "en-AU-NatashaNeural - en-AU (Female)",
+    "en-US-EricNeural - en-US (Male)",
+    "en-US-AvaMultilingualNeural - en-US (Female)",
+  ];
 
   const audioRecorder = useRef<AudioRecorder>(new AudioRecorder());
 
@@ -36,6 +97,7 @@ export default function Microphone() {
         const base64Audio = reader.result as string;
         const payload = {
           question: "",
+          chatId: sessionID,
           uploads: [
             {
               data: base64Audio,
@@ -50,7 +112,7 @@ export default function Microphone() {
 
         try {
           const response = await fetch(
-            "https://llminabox.criticalfutureglobal.com/api/v1/prediction/0f6e4479-ba3d-4a34-b0cb-be96f269a24c",
+            `https://llminabox.criticalfutureglobal.com/api/v1/prediction/${chatflowId}`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -59,16 +121,29 @@ export default function Microphone() {
           );
 
           const chatCompletion = await response.json();
-          setCaption(chatCompletion.text);
 
           const ttsResponse = await fetch("/api/tts", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text: chatCompletion.text }),
+            body: JSON.stringify({
+              text: chatCompletion.text,
+              voice: selectedVoice,
+              rate: speechRate,
+              pitch: speechPitch,
+            }),
           });
 
           const { audioUrl } = await ttsResponse.json();
           const audioElement = new Audio(audioUrl);
+
+          // When audio starts playing, show the caption.
+          audioElement.addEventListener("playing", () => {
+            setCaption(chatCompletion.text);
+          });
+          // When audio ends, remove the caption.
+          audioElement.addEventListener("ended", () => {
+            setCaption(null);
+          });
 
           setAudio(audioElement);
           audioElement.play();
@@ -85,6 +160,15 @@ export default function Microphone() {
     }
   };
 
+  // Function to stop audio playback manually.
+  const stopAudioPlayback = () => {
+    if (audio) {
+      audio.pause();
+      audio.currentTime = 0;
+      setCaption(null);
+    }
+  };
+
   const handleAudioPlaying = () => {
     return (
       audio &&
@@ -95,36 +179,156 @@ export default function Microphone() {
     );
   };
 
+  // Generate a new conversation by updating the session ID.
+  const newConversation = () => {
+    setSessionID(Math.random().toString(36).substring(7));
+    setCaption(null);
+    setError(null);
+  };
+
   return (
-    <div className="w-full relative">
-      <div className="relative flex w-screen justify-center items-center max-w-screen-lg place-items-center content-center before:pointer-events-none after:pointer-events-none before:absolute before:right-0 after:right-1/4 before:h-[300px] before:w-[480px] before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-[240px] after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 before:lg:h-[360px]">
-        <Siriwave
-          theme="ios9"
-          autostart={handleAudioPlaying() || isRecording}
-        />
+    <div className="w-full min-h-screen bg-gray-900 text-white relative flex flex-col">
+      {/* Header with Settings and New Conversation icons */}
+      <div className="absolute top-4 right-4 flex space-x-4 z-50">
+        <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+          <DialogTrigger asChild>
+            <Button variant="ghost" className="p-2">
+              <CogIcon className="h-6 w-6" />
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="bg-gray-800 text-white">
+            <DialogHeader>
+              <DialogTitle>Settings</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              {/* Chatflow ID Input */}
+              <div className="flex flex-col">
+                <label className="mb-1 font-medium">Chatflow ID</label>
+                <input
+                  type="text"
+                  value={chatflowId || ""}
+                  onChange={(e) => setChatflowId(e.target.value)}
+                  className="border rounded p-2 bg-gray-700 text-white"
+                  placeholder="Enter Chatflow ID"
+                />
+              </div>
+              {/* Voice Select using Shadcn Select */}
+              <div className="flex flex-col">
+                <label className="mb-1 font-medium">Voice</label>
+                <Select value={selectedVoice} onValueChange={setSelectedVoice}>
+                  <SelectTrigger className="border rounded p-2 bg-gray-700 text-white">
+                    <SelectValue placeholder="Select a voice" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {voices.map((voice) => (
+                      <SelectItem key={voice} value={voice}>
+                        {voice}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {/* Speech Rate Slider using Shadcn Slider */}
+              <div className="flex flex-col">
+                <label className="mb-1 font-medium">
+                  Speech Rate ({speechRate}%)
+                </label>
+                <Slider
+                  value={[speechRate]}
+                  onValueChange={(value) => setSpeechRate(value[0])}
+                  min={-50}
+                  max={50}
+                  step={1}
+                  className="w-full"
+                />
+              </div>
+              {/* Speech Pitch Slider using Shadcn Slider */}
+              <div className="flex flex-col">
+                <label className="mb-1 font-medium">
+                  Speech Pitch ({speechPitch} Hz)
+                </label>
+                <Slider
+                  value={[speechPitch]}
+                  onValueChange={(value) => setSpeechPitch(value[0])}
+                  min={-20}
+                  max={20}
+                  step={1}
+                  className="w-full"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button>Save</Button>
+              </DialogClose>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        <Button onClick={newConversation} variant="ghost" className="p-2">
+          <PlusIcon className="h-6 w-6" />
+        </Button>
       </div>
-      <div className="mt-10 flex flex-col align-middle items-center">
-        <button
-          className="w-24 h-24"
-          onMouseDown={startRecording}
-          onMouseUp={stopRecording}
-          onMouseLeave={isRecording ? stopRecording : undefined}
-          disabled={isLoading}
-        >
-          <Recording
-            width="96"
-            height="96"
-            className={`cursor-pointer ${
-              isRecording ? "fill-red-400 drop-shadow-glowRed" : "fill-gray-600"
-            }`}
+
+      <main className="flex-grow flex flex-col justify-between items-center">
+        {/* Siriwave Visualization (always visible while recording or audio is playing) */}
+        <div className="w-full flex justify-center items-center h-1/2">
+          <Siriwave
+            theme="ios9"
+            autostart={handleAudioPlaying() || isRecording}
           />
-        </button>
-        {error && <div className="mt-4 p-2 text-red-500 text-sm">{error}</div>}
-        {isLoading && (
-          <div className="mt-4 p-2 text-blue-500">Processing audio...</div>
-        )}
-        <div className="mt-20 p-6 text-xl text-center">{caption}</div>
-      </div>
+        </div>
+
+        {/* Bottom container: Caption above mic button */}
+        <div className="w-full flex flex-col items-center mb-10">
+          {caption && (
+            <div className="mb-4 p-6 text-xl text-center">{caption}</div>
+          )}
+          {handleAudioPlaying() ? (
+            <button
+              onClick={stopAudioPlayback}
+              className="w-24 h-24 cursor-pointer"
+            >
+              <StopCircle className="h-12 w-12 fill-red-400" />
+            </button>
+          ) : (
+            <button
+              className={`w-24 h-24 ${
+                isLoading || !chatflowId
+                  ? "cursor-not-allowed opacity-50"
+                  : "cursor-pointer"
+              }`}
+              onMouseDown={startRecording}
+              onMouseUp={stopRecording}
+              onMouseLeave={isRecording ? stopRecording : undefined}
+              disabled={isLoading || !chatflowId}
+            >
+              <Recording
+                width="96"
+                height="96"
+                className={`${
+                  isRecording
+                    ? "fill-red-400 drop-shadow-glowRed"
+                    : !chatflowId
+                    ? "fill-gray-600"
+                    : "fill-gray-400"
+                }`}
+              />
+            </button>
+          )}
+          {!chatflowId && !handleAudioPlaying() && (
+            <div className="mt-2 text-sm text-red-400 text-center">
+              No Chatflow ID provided. Please click the settings icon to enter
+              one.
+            </div>
+          )}
+          {error && (
+            <div className="mt-4 p-2 text-red-500 text-sm">{error}</div>
+          )}
+          {isLoading && (
+            <div className="mt-4 p-2 text-blue-400">Processing audio...</div>
+          )}
+        </div>
+      </main>
     </div>
   );
 }
