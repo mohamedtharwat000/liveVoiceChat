@@ -1,10 +1,4 @@
-'use client'
-import Image from "next/image";
 import Microphone from "./microphone";
-import { FaGithub } from "react-icons/fa";
-import { CiLinkedin } from "react-icons/ci";
-import Siriwave from 'react-siriwave';
-
 
 export default async function Home() {
   return (

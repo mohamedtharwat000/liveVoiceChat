@@ -9,10 +9,7 @@ import {
 import { useState, useEffect, useCallback } from "react";
 import { useQueue } from "@uidotdev/usehooks";
 import Recording from "./recording.svg";
-import axios from "axios";
 import Siriwave from "react-siriwave";
-
-import { Client } from "@gradio/client";
 
 export default function Microphone() {
   const { add, remove, first, size, queue } = useQueue<any>([]);
@@ -111,51 +108,42 @@ export default function Microphone() {
               "https://llminabox.criticalfutureglobal.com/api/v1/prediction/0f6e4479-ba3d-4a34-b0cb-be96f269a24c",
               {
                 method: "POST",
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   question: "who are you?",
                 }),
-                headers: {
-                  "Content-Type": "application/json",
-                },
               }
             )
               .then((response) => response.json())
               .then((chatCompletion) => {
                 setCaption(chatCompletion.text);
-                return Client.connect(
-                  "https://critical-hf-cpu-tts.hf.space"
-                ).then((app) => ({
-                  app,
-                  text: chatCompletion.text,
-                }));
-              })
-              .then(({ app, text }) => {
-                return app.predict("/predict", {
-                  text: text,
-                  voice: "en-NG-AbeoNeural - en-NG (Male)",
-                  rate: 0,
-                  pitch: 0,
+                return fetch("/api/tts", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ text: chatCompletion.text }),
                 });
               })
-              .then((prediction) => {
-                fetch(prediction.data[0].url)
-                  .then((response) => {
-                    console.log(response);
+              .then((response) => response.json())
+              .then((data) => {
+                const binaryString = atob(data.audio);
+                const len = binaryString.length;
+                const bytes = new Uint8Array(len);
+                for (let i = 0; i < len; i++) {
+                  bytes[i] = binaryString.charCodeAt(i);
+                }
 
-                    const blob = new Blob([response.data], {
-                      type: "audio/mp3",
-                    });
-                    const url = URL.createObjectURL(blob);
+                const blob = new Blob([bytes.buffer], {
+                  type: "audio/mp3",
+                });
+                const url = URL.createObjectURL(blob);
 
-                    const audio = new Audio(url);
-                    setAudio(audio);
-                    console.log("Playing audio.");
-
-                    audio.play();
-                  })
-                  .catch((error) => {
-                    console.error(error);
-                  });
+                const audio = new Audio(url);
+                setAudio(audio);
+                console.log("Playing audio.");
+                audio.play();
+              })
+              .catch((error) => {
+                console.error(error);
               });
           }
         }
@@ -206,7 +194,7 @@ export default function Microphone() {
 
   return (
     <div className="w-full relative">
-      <div className="relative flex w-screen flex justify-center items-center max-w-screen-lg place-items-center content-center before:pointer-events-none after:pointer-events-none before:absolute before:right-0 after:right-1/4 before:h-[300px] before:w-[480px] before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-[240px] after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 before:lg:h-[360px]">
+      <div className="relative flex w-screen justify-center items-center max-w-screen-lg place-items-center content-center before:pointer-events-none after:pointer-events-none before:absolute before:right-0 after:right-1/4 before:h-[300px] before:w-[480px] before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-[240px] after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 before:lg:h-[360px]">
         <Siriwave theme="ios9" autostart={handleAudio() || false} />
       </div>
       <div className="mt-10 flex flex-col align-middle items-center">
