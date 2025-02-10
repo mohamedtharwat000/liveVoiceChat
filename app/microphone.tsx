@@ -6,20 +6,17 @@ import {
   LiveTranscriptionEvents,
   createClient,
 } from "@deepgram/sdk";
-import { useState, useEffect, useCallback, } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useQueue } from "@uidotdev/usehooks";
 import Recording from "./recording.svg";
 import axios from "axios";
-import Siriwave from 'react-siriwave';
+import Siriwave from "react-siriwave";
 
-import ChatGroq from "groq-sdk";
-
+import { Client } from "@gradio/client";
 
 export default function Microphone() {
   const { add, remove, first, size, queue } = useQueue<any>([]);
   const [apiKey, setApiKey] = useState<CreateProjectKeyResponse | null>();
-  const [neetsApiKey, setNeetsApiKey] = useState<string | null>();
-  const [groqClient, setGroqClient] = useState<ChatGroq>();
   const [connection, setConnection] = useState<LiveClient | null>();
   const [isListening, setListening] = useState(false);
   const [isLoadingKey, setLoadingKey] = useState(true);
@@ -63,30 +60,13 @@ export default function Microphone() {
   }, [add, microphone, userMedia]);
 
   useEffect(() => {
-    if (!groqClient) {
-      console.log("getting a new groqClient");
-      const groq = new ChatGroq({ apiKey: process.env.NEXT_PUBLIC_GROQ_API_KEY, dangerouslyAllowBrowser: true });
-      setGroqClient(groq);
-      setLoadingKey(false);
-    }
-  }, [groqClient]);
-
-  useEffect(() => {
-    if (!neetsApiKey) {
-      console.log("getting a new neets api key");
-      setNeetsApiKey(process.env.NEXT_PUBLIC_NEETS_API_KEY);
-      setLoadingKey(false);
-    }
-  }, [neetsApiKey]);
-
-  useEffect(() => {
     if (!apiKey) {
       console.log("getting a new api key");
       fetch("/api/deepgram", { cache: "no-store" })
         .then((res) => res.json())
         .then((object) => {
           if (!("key" in object)) throw new Error("No api key returned");
-          console.log(object)
+          console.log(object);
           setApiKey(object);
           setLoadingKey(false);
         })
@@ -97,7 +77,6 @@ export default function Microphone() {
   }, [apiKey]);
 
   useEffect(() => {
-
     if (apiKey && "key" in apiKey) {
       console.log("connecting to deepgram");
       const deepgram = createClient(apiKey?.key ?? "");
@@ -128,55 +107,56 @@ export default function Microphone() {
         if (caption !== "") {
           setCaption(caption);
           if (data.is_final) {
-            if (groqClient) {
-              const completion = groqClient.chat.completions
-                .create({
-                  messages: [
-                    {
-                      role: "assistant",
-                      content: "You are communicating with the user on a phone, so your answers should not be too long and go directly to the essence of the sentences.",
-                    },
-                    {
-                      role: "user",
-                      content: caption,
-                    }
-                  ],
-                  model: "mixtral-8x7b-32768",
-                })
-                .then((chatCompletion) => {
-                  if (neetsApiKey) {
-                    setCaption(chatCompletion.choices[0]?.message?.content || "");
-                    axios.post("https://api.neets.ai/v1/tts", {
-                      text: chatCompletion.choices[0]?.message?.content || "",
-                      voice_id: 'us-female-2',
-                      params: {
-                        model: 'style-diff-500'
-                      }
-                    },
-                      {
-                        headers: {
-                          'Content-Type': 'application/json',
-                          'X-API-Key': neetsApiKey
-                        },
-                        responseType: 'arraybuffer'
-                      }
-                    ).then((response) => {
-                      const blob = new Blob([response.data], { type: 'audio/mp3' });
-                      const url = URL.createObjectURL(blob);
-
-                      const audio = new Audio(url);
-                      setAudio(audio);
-                      console.log('Playing audio.');
-
-                      audio.play();
-                    })
-                      .catch((error) => {
-                        console.error(error);
-                      });
-                  }
+            fetch(
+              "https://llminabox.criticalfutureglobal.com/api/v1/prediction/0f6e4479-ba3d-4a34-b0cb-be96f269a24c",
+              {
+                method: "POST",
+                body: JSON.stringify({
+                  question: "who are you?",
+                }),
+                headers: {
+                  "Content-Type": "application/json",
+                },
+              }
+            )
+              .then((response) => response.json())
+              .then((chatCompletion) => {
+                setCaption(chatCompletion.text);
+                return Client.connect(
+                  "https://critical-hf-cpu-tts.hf.space"
+                ).then((app) => ({
+                  app,
+                  text: chatCompletion.text,
+                }));
+              })
+              .then(({ app, text }) => {
+                return app.predict("/predict", {
+                  text: text,
+                  voice: "en-NG-AbeoNeural - en-NG (Male)",
+                  rate: 0,
+                  pitch: 0,
                 });
+              })
+              .then((prediction) => {
+                fetch(prediction.data[0].url)
+                  .then((response) => {
+                    console.log(response);
 
-            }
+                    const blob = new Blob([response.data], {
+                      type: "audio/mp3",
+                    });
+                    const url = URL.createObjectURL(blob);
+
+                    const audio = new Audio(url);
+                    setAudio(audio);
+                    console.log("Playing audio.");
+
+                    audio.play();
+                  })
+                  .catch((error) => {
+                    console.error(error);
+                  });
+              });
           }
         }
       });
@@ -208,7 +188,13 @@ export default function Microphone() {
   }, [connection, queue, remove, first, size, isProcessing, isListening]);
 
   function handleAudio() {
-    return audio && audio.currentTime > 0 && !audio.paused && !audio.ended && audio.readyState > 2;
+    return (
+      audio &&
+      audio.currentTime > 0 &&
+      !audio.paused &&
+      !audio.ended &&
+      audio.readyState > 2
+    );
   }
 
   if (isLoadingKey)
@@ -221,10 +207,7 @@ export default function Microphone() {
   return (
     <div className="w-full relative">
       <div className="relative flex w-screen flex justify-center items-center max-w-screen-lg place-items-center content-center before:pointer-events-none after:pointer-events-none before:absolute before:right-0 after:right-1/4 before:h-[300px] before:w-[480px] before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-[240px] after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 before:lg:h-[360px]">
-        <Siriwave
-          theme="ios9"
-          autostart={handleAudio() || false}
-        />
+        <Siriwave theme="ios9" autostart={handleAudio() || false} />
       </div>
       <div className="mt-10 flex flex-col align-middle items-center">
         <button className="w-24 h-24" onClick={() => toggleMicrophone()}>
@@ -238,11 +221,8 @@ export default function Microphone() {
             }
           />
         </button>
-        <div className="mt-20 p-6 text-xl text-center">
-          {caption}
-        </div>
+        <div className="mt-20 p-6 text-xl text-center">{caption}</div>
       </div>
-
     </div>
   );
 }

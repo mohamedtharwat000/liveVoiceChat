@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@deepgram/sdk": "^3.0.0-beta.2",
+    "@gradio/client": "^1.11.0",
     "@langchain/groq": "^0.0.1",
     "@svgr/webpack": "^8.1.0",
     "@uidotdev/usehooks": "^2.4.1",
