@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
-// Import Shadcn UI components for Select and Slider
 import {
   Select,
   SelectContent,
@@ -33,7 +32,6 @@ export default function Microphone() {
   const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Settings state
   const [settingsOpen, setSettingsOpen] = useState(true);
   const [chatflowId, setChatflowId] = useState<string | null>(null);
   const [sessionID, setSessionID] = useState<string>(
@@ -136,13 +134,15 @@ export default function Microphone() {
           const { audioUrl } = await ttsResponse.json();
           const audioElement = new Audio(audioUrl);
 
-          // When audio starts playing, show the caption.
+          // When audio starts playing, update the caption if needed
           audioElement.addEventListener("playing", () => {
             setCaption(chatCompletion.text);
           });
-          // When audio ends, remove the caption.
+
+          // When audio ends naturally, remove the caption and clear the audio element
           audioElement.addEventListener("ended", () => {
             setCaption(null);
+            setAudio(null);
           });
 
           setAudio(audioElement);
@@ -160,26 +160,25 @@ export default function Microphone() {
     }
   };
 
-  // Function to stop audio playback manually.
+  // Modified stop function to also clear the audio state,
+  // so that the UI can switch back to showing the mic button.
   const stopAudioPlayback = () => {
     if (audio) {
       audio.pause();
       audio.currentTime = 0;
       setCaption(null);
+      setAudio(null);
     }
   };
 
-  const handleAudioPlaying = () => {
-    return (
-      audio &&
-      audio.currentTime > 0 &&
-      !audio.paused &&
-      !audio.ended &&
-      audio.readyState > 2
-    );
-  };
+  // Determines if audio is playing using the audio element properties.
+  const isAudioPlaying = () =>
+    audio &&
+    audio.currentTime > 0 &&
+    !audio.paused &&
+    !audio.ended &&
+    audio.readyState > 2;
 
-  // Generate a new conversation by updating the session ID.
   const newConversation = () => {
     setSessionID(Math.random().toString(36).substring(7));
     setCaption(null);
@@ -188,7 +187,6 @@ export default function Microphone() {
 
   return (
     <div className="w-full min-h-screen bg-gray-900 text-white relative flex flex-col">
-      {/* Header with Settings and New Conversation icons */}
       <div className="absolute top-4 right-4 flex space-x-4 z-50">
         <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
           <DialogTrigger asChild>
@@ -201,7 +199,6 @@ export default function Microphone() {
               <DialogTitle>Settings</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
-              {/* Chatflow ID Input */}
               <div className="flex flex-col">
                 <label className="mb-1 font-medium">Chatflow ID</label>
                 <input
@@ -212,7 +209,6 @@ export default function Microphone() {
                   placeholder="Enter Chatflow ID"
                 />
               </div>
-              {/* Voice Select using Shadcn Select */}
               <div className="flex flex-col">
                 <label className="mb-1 font-medium">Voice</label>
                 <Select value={selectedVoice} onValueChange={setSelectedVoice}>
@@ -228,7 +224,6 @@ export default function Microphone() {
                   </SelectContent>
                 </Select>
               </div>
-              {/* Speech Rate Slider using Shadcn Slider */}
               <div className="flex flex-col">
                 <label className="mb-1 font-medium">
                   Speech Rate ({speechRate}%)
@@ -242,7 +237,6 @@ export default function Microphone() {
                   className="w-full"
                 />
               </div>
-              {/* Speech Pitch Slider using Shadcn Slider */}
               <div className="flex flex-col">
                 <label className="mb-1 font-medium">
                   Speech Pitch ({speechPitch} Hz)
@@ -270,20 +264,16 @@ export default function Microphone() {
       </div>
 
       <main className="flex-grow flex flex-col justify-between items-center">
-        {/* Siriwave Visualization (always visible while recording or audio is playing) */}
         <div className="w-full flex justify-center items-center h-1/2">
-          <Siriwave
-            theme="ios9"
-            autostart={handleAudioPlaying() || isRecording}
-          />
+          <Siriwave theme="ios9" autostart={isAudioPlaying() || isRecording} />
         </div>
 
-        {/* Bottom container: Caption above mic button */}
         <div className="w-full flex flex-col items-center mb-10">
           {caption && (
             <div className="mb-4 p-6 text-xl text-center">{caption}</div>
           )}
-          {handleAudioPlaying() ? (
+
+          {isAudioPlaying() ? (
             <button
               onClick={stopAudioPlayback}
               className="w-24 h-24 cursor-pointer"
@@ -315,7 +305,8 @@ export default function Microphone() {
               />
             </button>
           )}
-          {!chatflowId && !handleAudioPlaying() && (
+
+          {!chatflowId && !isAudioPlaying() && (
             <div className="mt-2 text-sm text-red-400 text-center">
               No Chatflow ID provided. Please click the settings icon to enter
               one.
