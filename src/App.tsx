@@ -1,10 +1,8 @@
-"use client";
-
 import { useState, useRef } from "react";
-import Recording from "./recording.svg";
+import { Client } from "@gradio/client";
 import Siriwave from "react-siriwave";
-import { AudioRecorder } from "./recording";
-import { CogIcon, PlusIcon, StopCircle } from "lucide-react";
+import { AudioRecorder } from "@/recording";
+import { CogIcon, PlusIcon, StopCircle, Mic } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -120,19 +118,18 @@ export default function Microphone() {
 
           const chatCompletion = await response.json();
 
-          const ttsResponse = await fetch("/api/tts", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              text: chatCompletion.text,
-              voice: selectedVoice,
-              rate: speechRate,
-              pitch: speechPitch,
-            }),
+          const app = await Client.connect(
+            "https://critical-hf-cpu-tts.hf.space"
+          );
+          const prediction = await app.predict("/predict", {
+            text: chatCompletion.text,
+            voice: selectedVoice,
+            rate: speechRate,
+            pitch: speechPitch,
           });
 
-          const { audioUrl } = await ttsResponse.json();
-          const audioElement = new Audio(audioUrl);
+          // @ts-ignore
+          const audioElement = new Audio(prediction.data[0].url);
 
           // When audio starts playing, update the caption if needed
           audioElement.addEventListener("playing", () => {
@@ -282,7 +279,7 @@ export default function Microphone() {
             </button>
           ) : (
             <button
-              className={`w-24 h-24 ${
+              className={`flex justify-center items-center w-24 h-24 ${
                 isLoading || !chatflowId
                   ? "cursor-not-allowed opacity-50"
                   : "cursor-pointer"
@@ -292,16 +289,15 @@ export default function Microphone() {
               onMouseLeave={isRecording ? stopRecording : undefined}
               disabled={isLoading || !chatflowId}
             >
-              <Recording
-                width="96"
-                height="96"
-                className={`${
+              <Mic
+                className={` ${
                   isRecording
                     ? "fill-red-400 drop-shadow-glowRed"
                     : !chatflowId
                     ? "fill-gray-600"
-                    : "fill-gray-400"
+                    : ""
                 }`}
+                size={64}
               />
             </button>
           )}
