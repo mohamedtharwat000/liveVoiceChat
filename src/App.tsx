@@ -5,32 +5,34 @@ import SettingsSheet from "@/components/SettingsSheet";
 import Caption from "@/components/Caption";
 import MainButton from "@/components/MainButton";
 import Feedback from "@/components/Feedback";
+import WaveSurfer from "wavesurfer.js";
 import { useWavesurfer } from "@/hooks/useWaveSurfer";
+import RecordPlugin from "wavesurfer.js/dist/plugins/record.js";
 
 export default function Microphone() {
+  const [wavsurferRecorder, setWavesurferRecorder] =
+    useState<RecordPlugin | null>(null);
+  const [audioMode, setAudioMode] = useState<"input" | "output">("input");
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isAppReady, setIsAppReady] = useState(false);
   const [isAppListening, setIsAppListening] = useState(false);
   const [isHandleAudio, setIsHandleAudio] = useState(false);
   const [caption, setCaption] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
   const [positiveSpeechThreshold, setPositiveSpeechThreshold] = useState(0.5);
   const [negativeSpeechThreshold, setNegativeSpeechThreshold] = useState(0.35);
   const [redemptionFrames, setRedemptionFrames] = useState(8);
   const [frameSamples, setFrameSamples] = useState(1024);
   const [preSpeechPadFrames, setPreSpeechPadFrames] = useState(1);
   const [minSpeechFrames, setMinSpeechFrames] = useState(5);
-
   const [speechRate, setSpeechRate] = useState(0);
   const [speechPitch, setSpeechPitch] = useState(0);
-
   const [chatflowId, setChatflowId] = useState<string>(
     "e89d6572-be23-4709-a1f5-ab2aaada13cd"
   );
   const [sessionID, setSessionID] = useState<string>(
     Math.random().toString(32).substring(8)
   );
-
   const [selectedVoice, setSelectedVoice] = useState(
     "en-US-RogerNeural - en-US (Male)"
   );
@@ -38,10 +40,17 @@ export default function Microphone() {
   const currentConversation = useRef<number>(1);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const wavesurferRef = useRef<HTMLDivElement | null>(null);
+  const outputWaveRef = useRef<HTMLDivElement | null>(null);
 
-  const { startRecording, stopRecording } = useWavesurfer({
+  const record = useWavesurfer({
     containerRef: wavesurferRef,
   });
+
+  useEffect(() => {
+    if (record) {
+      setWavesurferRecorder(record);
+    }
+  }, [record]);
 
   const handleResetChat = useCallback(() => {
     if (audioRef.current) {
@@ -53,6 +62,7 @@ export default function Microphone() {
     setIsHandleAudio(false);
     setCaption(null);
     setError(null);
+    setAudioMode("input");
   }, []);
 
   const handleAudio = useCallback(
@@ -88,6 +98,10 @@ export default function Microphone() {
 
       setCaption(textResponse);
 
+      if (ttsResponse) setAudioUrl(ttsResponse.src);
+
+      setAudioMode("output");
+
       setIsHandleAudio(false);
     },
     [
@@ -101,8 +115,28 @@ export default function Microphone() {
   );
 
   useEffect(() => {
+    if (audioMode === "output" && outputWaveRef.current && audioUrl) {
+      const wsOutput = WaveSurfer.create({
+        container: outputWaveRef.current,
+        waveColor: "#A8DADC",
+        progressColor: "#1D3557",
+        backend: "MediaElement",
+      });
+
+      wsOutput.load(audioUrl);
+      wsOutput.on("ready", () => {
+        wsOutput.play();
+      });
+      wsOutput.on("finish", handleResetChat);
+
+      return () => {
+        wsOutput.destroy();
+      };
+    }
+  }, [audioMode, audioUrl, handleResetChat]);
+
+  useEffect(() => {
     if (audioRef.current && caption) {
-      audioRef.current.play();
       audioRef.current.onended = handleResetChat;
     }
     return () => {
@@ -177,13 +211,13 @@ export default function Microphone() {
     if (vad && vad.listening) {
       vad.pause();
       setIsAppListening(false);
-      stopRecording();
+      if (wavsurferRecorder) wavsurferRecorder.stopRecording();
     } else if (vad) {
       vad.start();
       setIsAppListening(true);
-      startRecording();
+      if (wavsurferRecorder) wavsurferRecorder.startRecording();
     }
-  }, [handleResetChat, startRecording, stopRecording, vad]);
+  }, [handleResetChat, vad, wavsurferRecorder]);
 
   return (
     <div className="min-h-screen bg-gray-900 text-white flex flex-col justify-between">
@@ -212,7 +246,10 @@ export default function Microphone() {
         onResetDefaults={handleResetDefaults}
       />
 
-      <div ref={wavesurferRef} className="w-full h-24 mb-4" />
+      <div
+        ref={audioMode === "output" ? outputWaveRef : wavesurferRef}
+        className="w-full h-24 mb-auto"
+      />
 
       <div className="flex flex-col justify-center items-center">
         <Caption text={caption} />
