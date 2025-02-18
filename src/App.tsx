@@ -1,14 +1,11 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useMicVAD } from "@/hooks/useMic";
-
-// import { useWaveSurfer } from "@/hooks/useWaveSurfer";
-
 import { handleAsyncFn, sttPrediction, ttsPrediction } from "@/lib/utils";
-
 import SettingsSheet from "@/components/SettingsSheet";
 import Caption from "@/components/Caption";
 import MainButton from "@/components/MainButton";
 import Feedback from "@/components/Feedback";
+import { useWavesurfer } from "@/hooks/useWaveSurfer";
 
 export default function Microphone() {
   const [isAppReady, setIsAppReady] = useState(false);
@@ -40,6 +37,11 @@ export default function Microphone() {
 
   const currentConversation = useRef<number>(1);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const wavesurferRef = useRef<HTMLDivElement | null>(null);
+
+  const { startRecording, stopRecording } = useWavesurfer({
+    containerRef: wavesurferRef,
+  });
 
   const handleResetChat = useCallback(() => {
     if (audioRef.current) {
@@ -172,22 +174,16 @@ export default function Microphone() {
     handleResetChat();
 
     // @ts-ignore
-    if (vad && vad?.listening) {
+    if (vad && vad.listening) {
       vad.pause();
       setIsAppListening(false);
-    }
-
-    if (vad && !isAppListening) {
+      stopRecording();
+    } else if (vad) {
       vad.start();
       setIsAppListening(true);
+      startRecording();
     }
-  }, [handleResetChat, isAppListening, vad]);
-
-  // const waveContainerRef = useRef<HTMLDivElement | null>(null);
-  // const { wavesurfer, record } = useWaveSurfer({
-  //   containerRef: waveContainerRef,
-  //   active: userSpeaking,
-  // });
+  }, [handleResetChat, startRecording, stopRecording, vad]);
 
   return (
     <div className="min-h-screen bg-gray-900 text-white flex flex-col justify-between">
@@ -216,9 +212,9 @@ export default function Microphone() {
         onResetDefaults={handleResetDefaults}
       />
 
-      <div className="flex flex-col justify-center items-center">
-        {/* <div ref={waveContainerRef} className="w-full h-24 mb-4" /> */}
+      <div ref={wavesurferRef} className="w-full h-24 mb-4" />
 
+      <div className="flex flex-col justify-center items-center">
         <Caption text={caption} />
 
         <MainButton

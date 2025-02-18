@@ -1,52 +1,55 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import WaveSurfer from "wavesurfer.js";
 import RecordPlugin from "wavesurfer.js/dist/plugins/record.esm.js";
 
-interface UseWaveSurferOptions {
+interface UseWavesurferOptions {
   containerRef: React.RefObject<HTMLDivElement | null>;
-  active: boolean;
 }
 
-export function useWaveSurfer({ containerRef, active }: UseWaveSurferOptions) {
-  const wsRef = useRef<WaveSurfer | null>(null);
-  const recordRef = useRef<ReturnType<typeof RecordPlugin.create> | null>(null);
+export function useWavesurfer({ containerRef }: UseWavesurferOptions) {
+  const [wavesurfer, setWavesurfer] = useState<WaveSurfer | null>(null);
+  const [record, setRecord] = useState<RecordPlugin | null>(null);
 
   useEffect(() => {
     if (!containerRef || !containerRef.current) return;
-
-    if (!active && wsRef.current) {
-      wsRef.current.destroy();
-      wsRef.current = null;
-      recordRef.current = null;
-    }
-
-    if (active) {
-      if (!wsRef.current) {
-        wsRef.current = WaveSurfer.create({
-          container: containerRef.current,
-          waveColor: "#A8DADC",
-          progressColor: "#1D3557",
-        });
-
-        recordRef.current = wsRef.current.registerPlugin(
-          RecordPlugin.create({
-            renderRecordedAudio: false,
-            scrollingWaveform: false,
-            continuousWaveform: true,
-            continuousWaveformDuration: 30,
-          })
-        );
-      }
-    }
+    const ws = WaveSurfer.create({
+      container: containerRef.current,
+      waveColor: "#A8DADC",
+      progressColor: "#1D3557",
+    });
+    setWavesurfer(ws);
 
     return () => {
-      if (wsRef.current) {
-        wsRef.current.destroy();
-        wsRef.current = null;
-        recordRef.current = null;
-      }
+      ws.destroy();
+      setWavesurfer(null);
     };
-  }, [active, containerRef]);
+  }, [containerRef]);
 
-  return { wavesurfer: wsRef.current, record: recordRef.current };
+  useEffect(() => {
+    if (wavesurfer) {
+      const rec = wavesurfer.registerPlugin(
+        RecordPlugin.create({
+          renderRecordedAudio: false,
+          scrollingWaveform: false,
+          continuousWaveform: false,
+          continuousWaveformDuration: 30,
+        })
+      );
+      setRecord(rec);
+
+      return () => {
+        rec.stopRecording();
+      };
+    }
+  }, [wavesurfer]);
+
+  const startRecording = useCallback(() => {
+    record?.startRecording({ deviceId: "default" });
+  }, [record]);
+
+  const stopRecording = useCallback(() => {
+    record?.stopRecording();
+  }, [record]);
+
+  return { wavesurfer, record, startRecording, stopRecording };
 }
