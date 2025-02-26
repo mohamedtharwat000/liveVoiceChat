@@ -19,19 +19,21 @@ export default function MainButton({
     <div className="relative flex flex-col justify-end items-center pb-16">
       <button
         onClick={onClick}
-        disabled={isLoading || !chatflowId || !isAppReady}
+        disabled={!chatflowId || !isAppReady}
         className={`relative z-10 flex justify-center items-center w-24 h-24 rounded-full focus:outline-none transition-all duration-900 border ${
-          isLoading || !chatflowId || !isAppReady
+          !chatflowId || !isAppReady
             ? "cursor-not-allowed opacity-50"
+            : isLoading
+            ? "cursor-pointer border-orange-400 border-4 animate-pulse"
             : listening
             ? "cursor-pointer border-red-400 border-4 animate-pulse"
             : "cursor-pointer hover:shadow-lg"
         }`}
       >
         {isLoading ? (
-          <Mic
+          <StopCircle
             size={64}
-            className="animate-spin drop-shadow-lg"
+            className="animate-spin text-orange-400 drop-shadow-lg"
             style={{ animationDuration: "1s" }}
           />
         ) : listening ? (
